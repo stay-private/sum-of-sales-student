@@ -1,6 +1,5 @@
 product,region,sales
-Apple,North,120
-Banana,South,80
-Cherry,East,150
-Apple,South,100
-Banana,East,60
+Widget A,North,100
+Widget B,South,150
+Widget A,East,60
+Widget C,West,200

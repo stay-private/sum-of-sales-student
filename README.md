@@ -1,66 +1,52 @@
-# Sales Summary (sum-of-sales)
+# Sales Summary SPA
 
-A single-page web application that fetches an attached CSV file (data.csv), sums its `sales` column, sets the page title to "Sales Summary", and displays the total inside the `#total-sales` element. Built with modern best practices and styled with Bootstrap 5 from jsDelivr.
+A simple single-page application that fetches data.csv, summarizes sales, and now also provides per-product totals, currency conversion, and region filtering.
 
-## Features
+What it does
+- Loads sales data from data.csv
+- Displays overall total sales
+- Shows a Bootstrap table of per-product totals (#product-sales)
+- Lets you pick a currency from rates.json via the #currency-picker
+- Lets you filter results by region via the #region-filter, which updates both the overall total and the per-product table
+- Sets a data-region attribute on the #total-sales element to reflect the active region
 
-- Fetches `data.csv` from the same directory
-- Robust CSV parsing (handles quoted fields and escaped quotes)
-- Sums the numeric values in the `sales` column (case-insensitive)
-- Displays the total in `#total-sales`
-- Loads Bootstrap 5 CSS from jsDelivr CDN
-- Production-ready error handling and accessible status messages
+Getting started
+1. Serve the directory over HTTP (for example):
+   - Using Node: npx serve .
+   - Using Python: python3 -m http.server 8000
+2. Open http://localhost:8000 in your browser.
 
-## Project Structure
+Files
+- index.html: App markup with controls and containers
+- script.js: App logic (CSV parsing, rendering, currency and region handling)
+- style.css: Minimal styling (on top of Bootstrap 5)
+- data.csv: Example dataset used by the app
+- rates.json: Currency conversion rates used by the currency picker
 
-- `index.html` — Single-page application shell
-- `script.js` — App logic: fetch CSV, parse, sum, and render
-- `style.css` — Minimal custom styles
-- `data.csv` — Attached dataset consumed by the app
+Data requirements
+- The CSV is expected to contain at least a sales column. If product and region columns exist, they are used for grouping and filtering.
+  - Recognized headers (case-insensitive): product, region, sales
 
-## Getting Started
+Accessibility
+- Live region updates via aria-live on the main container
+- Clear focus styles and semantic HTML
 
-You can open the app via HTTP locally or host it on GitHub Pages.
+Notes
+- The currency picker is populated from rates.json (e.g., USD, EUR, INR). INR is the default if present.
+- The per-product totals and overall total are converted to the chosen currency. The per-product table values are kept in a plain numeric format to ease machine parsing.
 
-### Run locally
+License
+- MIT
 
-Because browsers restrict `fetch` from the `file://` protocol, use a simple static server:
 
-- Python 3
-  - `python3 -m http.server 8080`
-  - Open http://localhost:8080 in your browser
+## Round 2 Updates
+### New Requirements:
+Enhance the sales page: add a Bootstrap table #product-sales showing per-product totals, introduce a currency selector #currency-picker using rates.json, and add a region filter #region-filter that updates #total-sales and sets data-region.
 
-- Node.js (http-server)
-  - `npx http-server -p 8080`
-  - Open http://localhost:8080
-
-### Deploy to GitHub Pages
-
-1. Push this repository to GitHub
-2. In your repository settings, enable GitHub Pages for the `main` branch (root directory)
-3. Visit the published URL (e.g., `https://<username>.github.io/<repo>/`)
-
-No additional build steps are required.
-
-## Technical Notes
-
-- Title is set to `Sales Summary` in HTML and enforced at runtime
-- Bootstrap 5 CSS is loaded from jsDelivr: `cdn.jsdelivr.net`
-- CSV is fetched from `./data.csv` with a timeout and `no-cache` to reduce stale content issues
-- The CSV parser tolerates quoted fields and escaped quotes and skips empty lines
-- Non-numeric cells in the `sales` column are ignored; errors fail gracefully with a clear status message
-
-## Accessibility
-
-- Live region (`aria-live="polite"`) communicates loading and error states
-- Focus-visible styles added for keyboard navigation
-
-## Security and Performance
-
-- No external JavaScript dependencies beyond optional Bootstrap JS (not required)
-- Fetch uses `same-origin` credentials and a request timeout
-- Minimal bundle size; no frameworks required
-
-## License
-
-This project is provided as-is for demonstration/testing purposes.
+### New Checks:
+- document.querySelectorAll("#product-sales tbody tr").length >= 1
+- (() => { const rows = [...document.querySelectorAll("#product-sales tbody tr td:last-child")]; const sum = rows.reduce((acc, cell) => acc + parseFloat(cell.textContent), 0); return Math.abs(sum - 510) < 0.01; })()
+- !!document.querySelector("#currency-picker option[value='USD']")
+- !!document.querySelector("#total-currency")
+- document.querySelector("#region-filter").tagName === "SELECT"
+- document.querySelector("#total-sales").dataset.region !== undefined

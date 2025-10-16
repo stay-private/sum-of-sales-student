@@ -1,13 +1,23 @@
 "use strict";
 
 // script.js - Single Page App logic for summing the 'sales' column from data.csv
-// Production-ready with robust CSV parsing, error handling, and accessibility-friendly status updates.
-
+// Enhanced to show per-product totals, currency selection via rates.json, and region filtering.
 (function () {
   const TOTAL_SELECTOR = "#total-sales";
   const STATUS_SELECTOR = "#status";
+  const TABLE_BODY_SELECTOR = "#product-sales tbody";
+  const CURRENCY_PICKER = "#currency-picker";
+  const REGION_FILTER = "#region-filter";
+  const TOTAL_CURRENCY = "#total-currency";
+
   const CSV_URL = "./data.csv"; // Relative path to attachment
+  const RATES_URL = "./rates.json";
   const FETCH_TIMEOUT_MS = 10000; // 10 seconds timeout
+
+  let rawRows = [];
+  let rates = {};
+  let selectedRegion = "all";
+  let selectedCurrency = "INR";
 
   /** Utility: Set status message */
   function setStatus(message, type = "info") {
@@ -23,6 +33,7 @@
     };
 
     if (message === "" || message == null) {
+      el.className = "";
       el.innerHTML = "";
       return;
     }
@@ -32,155 +43,238 @@
     el.textContent = message;
   }
 
-  /** Utility: Update the total sales element */
-  function updateTotal(total) {
-    const totalEl = document.querySelector(TOTAL_SELECTOR);
-    if (!totalEl) return;
-    // Ensure the content is strictly numeric for evaluation and accessibility
-    const isInt = Number.isInteger(total);
-    totalEl.textContent = isInt ? String(total) : String(Number(total.toFixed(2)));
-  }
-
   /** Fetch with timeout */
-  async function fetchWithTimeout(resource, options = {}) {
-    const { timeout = FETCH_TIMEOUT_MS, ...rest } = options;
-
+  async function fetchWithTimeout(url, options = {}) {
     const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), timeout);
-
+    const id = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     try {
-      const response = await fetch(resource, {
-        cache: "no-cache",
-        credentials: "same-origin",
-        signal: controller.signal,
-        ...rest,
-      });
-      return response;
+      const res = await fetch(url, { ...options, signal: controller.signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
+      return res;
     } finally {
       clearTimeout(id);
     }
   }
 
-  /** Robust CSV parser supporting quoted fields and escaped quotes */
+  /** Basic robust CSV parser supporting quoted fields */
   function parseCSV(text) {
-    // Strip UTF-8 BOM if present
-    if (text.charCodeAt(0) === 0xfeff) {
-      text = text.slice(1);
-    }
-
     const rows = [];
-    let row = [];
-    let cur = "";
-    let inQuotes = false;
+    const lines = text.replace(/\r\n?/g, "\n").split("\n");
+    if (!lines.length) return { headers: [], rows: [] };
 
-    for (let i = 0; i < text.length; i++) {
-      const char = text[i];
-      const next = text[i + 1];
-
-      if (inQuotes) {
-        if (char === '"') {
-          if (next === '"') {
-            // Escaped quote
-            cur += '"';
-            i++;
+    const parseLine = (line) => {
+      const fields = [];
+      let cur = "";
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (inQuotes) {
+          if (ch === '"') {
+            if (line[i + 1] === '"') { // escaped quote
+              cur += '"';
+              i++;
+            } else {
+              inQuotes = false;
+            }
           } else {
-            inQuotes = false;
+            cur += ch;
           }
         } else {
-          cur += char;
-        }
-      } else {
-        if (char === '"') {
-          inQuotes = true;
-        } else if (char === ",") {
-          row.push(cur);
-          cur = "";
-        } else if (char === "\n") {
-          row.push(cur);
-          rows.push(row);
-          row = [];
-          cur = "";
-        } else if (char === "\r") {
-          // Ignore CR, handle on LF
-        } else {
-          cur += char;
+          if (ch === ',') {
+            fields.push(cur);
+            cur = "";
+          } else if (ch === '"') {
+            inQuotes = true;
+          } else {
+            cur += ch;
+          }
         }
       }
-    }
+      fields.push(cur);
+      return fields;
+    };
 
-    // Push last value/row if needed
-    if (cur.length > 0 || row.length > 0) {
-      row.push(cur);
-      rows.push(row);
-    }
+    // Skip empty leading lines
+    let headerLineIndex = 0;
+    while (headerLineIndex < lines.length && lines[headerLineIndex].trim() === "") headerLineIndex++;
+    if (headerLineIndex >= lines.length) return { headers: [], rows: [] };
 
-    // Filter out empty rows
-    return rows.filter(r => r && r.some(cell => String(cell).trim() !== ""));
+    const headers = parseLine(lines[headerLineIndex]).map((h) => h.trim());
+
+    for (let i = headerLineIndex + 1; i < lines.length; i++) {
+      const line = lines[i];
+      if (!line || line.trim() === "") continue;
+      const cols = parseLine(line);
+      const obj = {};
+      for (let j = 0; j < headers.length; j++) {
+        obj[headers[j]] = cols[j] != null ? cols[j] : "";
+      }
+      rows.push(obj);
+    }
+    return { headers, rows };
   }
 
-  /** Sum the numeric values in the specified column name (case-insensitive) */
-  function sumColumn(rows, headerName) {
-    if (!Array.isArray(rows) || rows.length === 0) {
-      throw new Error("CSV appears to be empty.");
+  function coerceRow(row) {
+    // Case-insensitive column handling
+    const map = {};
+    for (const k of Object.keys(row)) map[k.toLowerCase()] = row[k];
+    const product = map["product"] || map["item"] || map["name"] || "Unknown";
+    const region = map["region"] || map["area"] || "";
+    const rawSales = map["sales"] ?? map["amount"] ?? map["total"] ?? "0";
+    const sales = typeof rawSales === "number" ? rawSales : parseFloat(String(rawSales).replace(/[^0-9.\-]/g, "")) || 0;
+    return { product, region, sales };
+  }
+
+  function getRate(code) {
+    const r = rates && Object.prototype.hasOwnProperty.call(rates, code) ? Number(rates[code]) : NaN;
+    return Number.isFinite(r) && r > 0 ? r : 1;
+  }
+
+  function buildRegionFilter() {
+    const select = document.querySelector(REGION_FILTER);
+    if (!select) return;
+    select.innerHTML = "";
+    const optAll = document.createElement("option");
+    optAll.value = "";
+    optAll.textContent = "All Regions";
+    select.appendChild(optAll);
+
+    const regions = Array.from(new Set(rawRows.map((r) => r.region).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+    regions.forEach((reg) => {
+      const opt = document.createElement("option");
+      opt.value = reg;
+      opt.textContent = reg;
+      select.appendChild(opt);
+    });
+
+    // Default to All Regions
+    select.value = "";
+    selectedRegion = "all";
+
+    select.addEventListener("change", () => {
+      selectedRegion = select.value || "all";
+      render();
+    });
+  }
+
+  function buildCurrencyPicker() {
+    const picker = document.querySelector(CURRENCY_PICKER);
+    if (!picker) return;
+    picker.innerHTML = "";
+    const entries = Object.entries(rates);
+    entries.forEach(([code]) => {
+      const opt = document.createElement("option");
+      opt.value = code;
+      opt.textContent = code;
+      picker.appendChild(opt);
+    });
+
+    // Default currency is INR if present, else first available
+    if (rates && Object.prototype.hasOwnProperty.call(rates, "INR")) {
+      picker.value = "INR";
+    } else if (entries.length) {
+      picker.value = entries[0][0];
+    }
+    selectedCurrency = picker.value;
+
+    picker.addEventListener("change", () => {
+      selectedCurrency = picker.value;
+      render();
+    });
+  }
+
+  function getFilteredRows() {
+    if (selectedRegion === "all") return rawRows;
+    return rawRows.filter((r) => r.region === selectedRegion);
+  }
+
+  function formatNumberForTable(x) {
+    // Avoid thousands separators so machine parsing stays reliable
+    const isInt = Math.abs(x - Math.round(x)) < 1e-9;
+    return isInt ? String(Math.round(x)) : x.toFixed(2);
+  }
+
+  function formatNumberForTotal(x) {
+    try {
+      return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(x);
+    } catch (_) {
+      return formatNumberForTable(x);
+    }
+  }
+
+  function render() {
+    const rate = getRate(selectedCurrency);
+    const filtered = getFilteredRows();
+
+    // Update total
+    const totalRaw = filtered.reduce((acc, r) => acc + r.sales, 0);
+    const totalConverted = totalRaw * rate;
+
+    const totalEl = document.querySelector(TOTAL_SELECTOR);
+    if (totalEl) {
+      totalEl.textContent = formatNumberForTotal(totalConverted);
+      totalEl.dataset.region = selectedRegion === "all" ? "all" : selectedRegion;
     }
 
-    const headers = rows[0].map(h => String(h).trim());
-    const salesIdx = headers.findIndex(h => h.toLowerCase() === headerName.toLowerCase());
+    const curEl = document.querySelector(TOTAL_CURRENCY);
+    if (curEl) curEl.textContent = selectedCurrency;
 
-    if (salesIdx === -1) {
-      throw new Error(`Required column \"${headerName}\" not found in CSV headers: [${headers.join(", ")}]`);
+    // Group by product for table
+    const byProduct = new Map();
+    filtered.forEach((r) => {
+      const key = r.product || "Unknown";
+      byProduct.set(key, (byProduct.get(key) || 0) + r.sales);
+    });
+
+    const tbody = document.querySelector(TABLE_BODY_SELECTOR);
+    if (tbody) {
+      tbody.innerHTML = "";
+      const products = Array.from(byProduct.keys()).sort((a, b) => a.localeCompare(b));
+      products.forEach((p) => {
+        const tr = document.createElement("tr");
+        const tdName = document.createElement("td");
+        tdName.textContent = p;
+        const tdTotal = document.createElement("td");
+        tdTotal.className = "text-end";
+        tdTotal.textContent = formatNumberForTable(byProduct.get(p) * rate);
+        tr.appendChild(tdName);
+        tr.appendChild(tdTotal);
+        tbody.appendChild(tr);
+      });
     }
-
-    let total = 0;
-    for (let i = 1; i < rows.length; i++) {
-      const row = rows[i];
-      if (!row || typeof row[salesIdx] === "undefined") continue;
-      const raw = String(row[salesIdx]).trim();
-      if (raw === "") continue;
-
-      const value = Number(raw.replace(/[^0-9.+-eE]/g, "")); // strip non-numeric extras just in case
-      if (!Number.isFinite(value)) {
-        // Skip non-numeric cells gracefully
-        continue;
-      }
-      total += value;
-    }
-
-    return total;
   }
 
   async function init() {
     try {
-      // Title is already set in HTML, but enforce at runtime to satisfy any dynamic checks
-      if (document && document.title !== "Sales Summary") {
-        document.title = "Sales Summary";
+      setStatus("Loading sales data...", "info");
+      const [csvRes, ratesRes] = await Promise.all([
+        fetchWithTimeout(CSV_URL),
+        fetchWithTimeout(RATES_URL).catch(() => null), // tolerate missing rates
+      ]);
+
+      const csvText = await csvRes.text();
+      const parsed = parseCSV(csvText);
+      rawRows = parsed.rows.map(coerceRow);
+
+      if (!rawRows.length) {
+        setStatus("No rows found in CSV.", "warning");
       }
 
-      setStatus("Loading sales data…", "info");
-      updateTotal(0);
-
-      const res = await fetchWithTimeout(CSV_URL, { timeout: FETCH_TIMEOUT_MS });
-      if (!res.ok) {
-        throw new Error(`Failed to fetch data.csv (status ${res.status})`);
+      if (ratesRes) {
+        rates = await ratesRes.json();
+      } else {
+        rates = { INR: 1 };
       }
 
-      const text = await res.text();
-      const rows = parseCSV(text);
-      const total = sumColumn(rows, "sales");
-
-      updateTotal(total);
-      setStatus(`Successfully loaded ${Math.max(0, rows.length - 1)} record(s).`, "success");
+      buildRegionFilter();
+      buildCurrencyPicker();
+      render();
+      setStatus("Loaded sales data.", "success");
     } catch (err) {
-      console.error("Error loading sales data:", err);
-      setStatus(`Error: ${err && err.message ? err.message : "Unable to load sales data."}`, "danger");
-      // Keep whatever value is currently displayed; app remains usable.
+      console.error(err);
+      setStatus(`Failed to load data: ${err && err.message ? err.message : err}`, "danger");
     }
   }
 
-  // Initialize when DOM is ready
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init, { once: true });
-  } else {
-    init();
-  }
+  document.addEventListener("DOMContentLoaded", init);
 })();

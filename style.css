@@ -28,3 +28,7 @@ html, body {
   outline: 3px solid var(--app-accent);
   outline-offset: 2px;
 }
+
+#product-sales td, #product-sales th {
+  vertical-align: middle;
+}
