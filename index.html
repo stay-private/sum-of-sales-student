@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="A simple single-page app that fetches data.csv, sums its sales column, and displays the total." />
+  <title>Sales Summary</title>
+
+  <!-- Bootstrap 5 CSS from jsdelivr -->
+  <link
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+    rel="stylesheet"
+    integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+    crossorigin="anonymous"
+  />
+
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <noscript>
+    <div class="container py-3">
+      <div class="alert alert-warning" role="alert">
+        JavaScript is required to load and summarize sales data.
+      </div>
+    </div>
+  </noscript>
+
+  <main class="container py-4" id="app" aria-live="polite">
+    <header class="mb-4 text-center">
+      <h1 class="display-6 mb-1">Sales Summary</h1>
+      <p class="text-muted mb-0">Aggregated from data.csv</p>
+    </header>
+
+    <section class="row justify-content-center">
+      <div class="col-12 col-md-8 col-lg-6">
+        <div class="card shadow-sm">
+          <div class="card-body text-center">
+            <p class="card-subtitle text-uppercase text-muted mb-2">Total Sales</p>
+            <div class="display-3 fw-bold" id="total-sales" aria-label="Total sales amount">0</div>
+            <div class="mt-3" id="status" aria-live="polite" aria-atomic="true"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Optional Bootstrap JS (not required for this app's functionality) -->
+  <!-- <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous" defer></script> -->
+
+  <script src="./script.js" type="module" defer></script>
+</body>
+</html>

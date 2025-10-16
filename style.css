@@ -1,0 +1,30 @@
+/* style.css - Minimal enhancements on top of Bootstrap for better presentation */
+:root {
+  --app-accent: #0d6efd; /* Bootstrap primary */
+}
+
+html, body {
+  height: 100%;
+}
+
+#total-sales {
+  letter-spacing: 0.5px;
+}
+
+#status {
+  min-height: 2.5rem; /* Reserve space to avoid layout shift when status appears */
+}
+
+.card {
+  border-radius: 0.75rem;
+}
+
+.card-subtitle {
+  letter-spacing: 0.08em;
+}
+
+/* Improve focus styles for accessibility */
+:focus-visible {
+  outline: 3px solid var(--app-accent);
+  outline-offset: 2px;
+}
